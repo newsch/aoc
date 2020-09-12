@@ -2,6 +2,19 @@
 open Printf
 
 
+let stream_fold f init stream =
+  let result = ref init in
+  Stream.iter
+    (fun x -> result := f !result x)
+    stream;
+  !result;;
+
+let line_stream_of_channel channel =
+  Stream.from
+    (fun _ ->
+       try Some (input_line channel) with End_of_file -> None);;
+
+
 let apply_cmd (total: int) (c: string) : int =
   let v = int_of_string (String.sub c 1 ((String.length c) - 1)) in
   match String.get c 0 with
@@ -11,12 +24,5 @@ let apply_cmd (total: int) (c: string) : int =
 
 
 let () =
-  let lines = ref [] in
-  try
-    while true; do
-      lines := input_line stdin :: !lines
-    done;
-  with End_of_file ->
-    (* print_endline (List.fold_left (^) "" !lines); *)
-    Printf.printf "%d\n" (List.fold_left apply_cmd 0 !lines);
-    flush stdout;;
+  Printf.printf "%d\n" (stream_fold apply_cmd 0 (line_stream_of_channel stdin));
+  flush stdout;;
