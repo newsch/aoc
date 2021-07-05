@@ -142,7 +142,7 @@ let print_map (m: depmap) =
  * Usage:
  *     ./day07.ml < input.txt | plantuml -p > viz.png
  *)
-let viz () =
+let viz_plantuml () =
   let edges =
     stdin
     |> line_seq_of_channel
@@ -154,6 +154,22 @@ let viz () =
   output_string stdout "@enduml\n";
 ;;
 
+(* output a graphviz diagram of the dependencies
+ *
+ * Usage:
+ *     ./day07.ml < input.txt | dot -Tsvg > viz.svg
+ *)
+let viz_graphviz () =
+  let edges =
+    stdin
+    |> line_seq_of_channel
+    |> Seq.map parse_edge
+    |> List.of_seq
+  in
+  output_string stdout "digraph {\n";
+  edges |> List.iter (function | node, dep -> Printf.printf "%c -> %c;\n" dep node );
+  output_string stdout "}\n";
+;;
 
 let main () =
   stdin
@@ -169,6 +185,7 @@ let main () =
 ;;
 
 let () =
-  main ()
-  (* viz () *)
+  (* main () *)
+  viz_graphviz ()
+  (* viz_plantuml () *)
 ;;
