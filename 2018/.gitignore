@@ -1,0 +1,4 @@
+# ocaml compilation leftovers
+*.cmi
+*.cmx
+*.o

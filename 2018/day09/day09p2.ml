@@ -1,4 +1,4 @@
-(* #! /usr/bin/env ocaml *)
+#! /usr/bin/env ocaml
 (* Day 9 part 2: Marble Mania
  *
  * USAGE:
@@ -26,13 +26,50 @@ let seq_last (s: 'a Seq.t) : 'a =
   | Cons (last, s') -> seq_last' last s'
 ;;
 
+(** a circular list *)
+module Circle = struct
+    type t = {
+       next: int list; (** current center and next items *)
+       prev: int list; (** previous items in reverse order *)
+    }
+
+    let empty : t = {next=[]; prev=[];};;
+   
+    (** insert a new item, centering around it *)
+    let insert item c : t =
+        { next=item::c.next; prev=c.prev; }
+    ;;
+    
+    (** remove the current center of the list, fails if empty *)
+    let remove c : int * t =
+        match c.next with
+        | hd::next' -> hd, {next=next'; prev=c.prev;}
+        | [] -> match List.rev c.prev with
+            | [] -> failwith "cannot remove from empty Circle"
+            | hd::next' -> hd, {next=next'; prev=[];}
+    ;;
+    
+    let rec shift_forward i c : t =
+        if i = 0 then c else
+        match c.next with
+        | hd::next' -> shift_forward (i - 1) {next=next'; prev=hd::c.prev}
+        | [] -> shift_forward i {prev=[]; next=(List.rev c.prev)}
+    ;;
+
+    let rec shift_backward i c : t =
+        if i = 0 then c else
+        match c.prev with
+        | hd::prev' ->  shift_backward (i - 1) {next=hd::c.next; prev=prev'}
+        | [] -> shift_backward i {prev=(List.rev c.next); next=[]}
+    ;;
+end
+
 module IntMap = Map.Make(Int)
 
 type state = {
     players: int;
     round: int;
-    current_i: int;
-    circle: int array;
+    circle: Circle.t;
     scores: int IntMap.t; (** player -> score *)
 }
 
@@ -89,7 +126,6 @@ let current_player players round = (round - 1) mod players + 1;;
 let play_round {
     players;
     round;
-    current_i;
     circle;
     scores;
 } : state =
@@ -97,16 +133,13 @@ let play_round {
     let current_player = current_player players round in
 
     if round mod 23 = 0 then
-        let current_i = (nth_clockwise (current_i - 7) circle) in
-	let removed, circle = list_remove current_i circle in
-        let current_i = if current_i >= Array.length circle then 0 else current_i in
+	let removed, circle = circle |> Circle.shift_backward 7 |> Circle.remove in
 
         let scores = add_score current_player (round + removed) scores in
-        { players; round; current_i; circle; scores; }
+        { players; round; circle; scores; }
     else
-        let current_i = (nth_clockwise (current_i + 2) circle) in
-        let circle = list_insert round current_i circle in
-        { players; round; current_i; circle; scores; }
+        let circle = circle |> Circle.shift_forward 2 |> Circle.insert round in
+        { players; round; circle; scores; }
 ;;
 
 let rec play_for i s : state Seq.t = fun () ->
@@ -131,7 +164,7 @@ let output_scores ch s =
     |> Printf.fprintf ch "{ %s }\n"
 ;;
 
-let output_board ch s =
+(* let output_board ch s =
     let { circle; current_i; players; round; } = s in
     let circle_str = circle
     |> Array.to_list
@@ -141,7 +174,7 @@ let output_board ch s =
     |> String.concat ""
     in
     Printf.fprintf ch "[%d]%s\n" (current_player s.players s.round) circle_str;
-;;
+;; *)
 
 let () =
     let players, marbles = stdin |> input_line |> parse_ctx in
@@ -151,8 +184,7 @@ let () =
     let state = {
         players;
         round = 0;
-        current_i = 0;
-        circle = [|0|];
+        circle = Circle.insert 0 Circle.empty;
         scores = IntMap.empty;
     } in
 
