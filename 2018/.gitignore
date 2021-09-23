@@ -2,3 +2,9 @@
 *.cmi
 *.cmx
 *.o
+
+_build/
+
+# executables
+*.out
+*.byte
