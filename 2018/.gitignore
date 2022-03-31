@@ -3,8 +3,10 @@
 *.cmx
 *.o
 
+# ocamlbuild build folder
 _build/
 
 # executables
 *.out
 *.byte
+*.native
