@@ -1,0 +1,2 @@
+#! /usr/bin/env sh
+sed -i 's|^(\* *#! */usr/bin/env ocaml *\*)|#! /usr/bin/env ocaml|' $@

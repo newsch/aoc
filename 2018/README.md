@@ -7,3 +7,8 @@ These solutions are written as unix scripts - they generally work like
 ./dayXX.ml < input.txt > solution.txt
 ```
 They _should_ run without additional packages or dependencies.
+
+To compile to native code (after commenting out the shebang):
+    ocamlbuild dayXX.native
+or
+    ocamlopt dayXX.ml -o dayXX
