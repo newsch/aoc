@@ -1,0 +1,11 @@
+profile = ocamlformat
+version = 0.21.0
+sequence-style = separator
+let-binding-spacing = double-semicolon
+sequence-blank-line = preserve-one
+break-infix = fit-or-vertical
+break-cases = fit-or-vertical
+break-separators = before
+space-around-lists = true
+space-around-arrays = true
+space-around-records = true
