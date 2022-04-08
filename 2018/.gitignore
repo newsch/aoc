@@ -1,6 +1,7 @@
 # ocaml compilation leftovers
 *.cmi
 *.cmx
+*.cmo
 *.o
 
 # ocamlbuild build folder

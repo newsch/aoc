@@ -1,2 +1,4 @@
 *.txt
 !input.txt
+!example.txt
+!README.txt
