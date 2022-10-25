@@ -1,4 +1,4 @@
-#! /usr/bin/env ocaml
+(* #! /usr/bin/env ocaml *)
 
 (* Day 14: Chocolate Charts
  *
@@ -88,17 +88,15 @@ let digits (n : int) : int list =
   digits' n |> List.rev
 ;;
 
-(** List backed by a Map, providing efficient pushes, and  *)
+(** List backed by a Map for efficient pushes and indexing *)
 module MapList = struct
-  module IntMap = Map.Make (Int)
+  type 'a t = { length: int; map: (int, 'a) Hashtbl.t }
 
-  type 'a t = { length: int; map: 'a IntMap.t }
-
-  let empty = { length= 0; map= IntMap.empty }
+  let empty = { length= 0; map= Hashtbl.create 0 }
 
   let push i m =
-    let map = IntMap.add m.length i m.map and length = m.length + 1 in
-    { map; length }
+    Hashtbl.add m.map m.length i ;
+    { m with length= m.length + 1 }
   ;;
 
   let rec push_seq (s : 'a Seq.t) (m : 'a t) =
@@ -109,13 +107,13 @@ module MapList = struct
 
   let rec nth m i =
     if i < 0 || i >= m.length then failwith "Index out of range"
-    else IntMap.find i m.map
+    else Hashtbl.find m.map i
   ;;
 
   let to_seq m =
     let rec to_seq' i () =
       if i >= m.length then Seq.Nil
-      else Seq.Cons (IntMap.find i m.map, to_seq' (i + 1))
+      else Seq.Cons (Hashtbl.find m.map i, to_seq' (i + 1))
     in
     to_seq' 0
   ;;
@@ -209,7 +207,7 @@ let verbose : bool =
   Sys.argv
   |> Array.to_seq
   |> Seq.drop 1
-  |> Seq.find ((=) "-v")
+  |> Seq.find (( = ) "-v")
   |> Option.is_some
 ;;
 
