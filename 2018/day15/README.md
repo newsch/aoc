@@ -2,7 +2,7 @@
 
 ## Usage
 
-    ocamlbuild day15.native
+    make
     ./day15.native < input.txt
 
 ## Context
