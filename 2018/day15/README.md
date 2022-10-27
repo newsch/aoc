@@ -59,6 +59,7 @@ The Elf sees three squares in range of a target (?), two of which are nearest (!
 Here's a larger example of movement:
 
 Initially:
+
     #########
     #G..G..G#
     #.......#
@@ -70,6 +71,7 @@ Initially:
     #########
 
 After 1 round:
+
     #########
     #.G...G.#
     #...G...#
@@ -81,6 +83,7 @@ After 1 round:
     #########
 
 After 2 rounds:
+
     #########
     #..G.G..#
     #...G...#
@@ -92,6 +95,7 @@ After 2 rounds:
     #########
 
 After 3 rounds:
+
     #########
     #.......#
     #..GGG..#
@@ -130,6 +134,7 @@ The Elves look quite outnumbered. You need to determine the outcome of the battl
 Below is an entire sample combat. Next to each map, each row's units' hit points are listed from left to right.
 
 Initially:
+
     #######   
     #.G...#   G(200)
     #...EG#   E(200), G(200)
@@ -139,6 +144,7 @@ Initially:
     #######   
 
 After 1 round:
+
     #######   
     #..G..#   G(200)
     #...EG#   E(197), G(197)
@@ -148,6 +154,7 @@ After 1 round:
     #######   
 
 After 2 rounds:
+
     #######   
     #...G.#   G(200)
     #..GEG#   G(200), E(188), G(194)
@@ -159,6 +166,7 @@ After 2 rounds:
 Combat ensues; eventually, the top Elf dies:
 
 After 23 rounds:
+
     #######   
     #...G.#   G(200)
     #..G.G#   G(200), G(131)
@@ -168,6 +176,7 @@ After 23 rounds:
     #######   
 
 After 24 rounds:
+
     #######   
     #..G..#   G(200)
     #...G.#   G(131)
@@ -177,6 +186,7 @@ After 24 rounds:
     #######   
 
 After 25 rounds:
+
     #######   
     #.G...#   G(200)
     #..G..#   G(131)
@@ -186,6 +196,7 @@ After 25 rounds:
     #######   
 
 After 26 rounds:
+
     #######   
     #G....#   G(200)
     #.G...#   G(131)
@@ -195,6 +206,7 @@ After 26 rounds:
     #######   
 
 After 27 rounds:
+
     #######   
     #G....#   G(200)
     #.G...#   G(131)
@@ -204,6 +216,7 @@ After 27 rounds:
     #######   
 
 After 28 rounds:
+
     #######   
     #G....#   G(200)
     #.G...#   G(131)
@@ -215,6 +228,7 @@ After 28 rounds:
 More combat ensues; eventually, the bottom Elf dies:
 
 After 47 rounds:
+
     #######   
     #G....#   G(200)
     #.G...#   G(131)
