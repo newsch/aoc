@@ -30,6 +30,20 @@ module Point = struct
   ;;
 
   let pp ppf p = Format.fprintf ppf "(%d, %d)" p.x p.y
+
+  let arround p () =
+    Seq.(
+      Cons
+        ( { p with y= p.y - 1 }
+        , fun () ->
+            Cons
+              ( { p with x= p.x - 1 }
+              , fun () ->
+                  Cons
+                    ( { p with x= p.x + 1 }
+                    , fun () -> Cons ({ p with y= p.y + 1 }, fun () -> Nil) ) )
+        ))
+  ;;
 end
 
 let rec char_seq_of_channel ch () =
@@ -43,6 +57,28 @@ let char_seq_of_string s =
     if i >= stop then Seq.empty else Seq.cons (String.get s i) (loop (i + 1))
   in
   loop 0
+;;
+
+(** inclusive sequence of start -> stop *)
+let rec range start stop : int Seq.t =
+ fun () ->
+  if start > stop then Seq.Nil else Seq.Cons (start, range (start + 1) stop)
+;;
+
+(** [sorted_difference cmp xs ys] is the sorted sequence [xs] without the sorted [ys] *)
+let rec seq_sorted_difference cmp xs ys () =
+  let open Seq in
+  match (xs (), ys ()) with
+  | Nil, _ -> Nil
+  | xs, Nil -> xs
+  | Cons (x, xs'), Cons (y, ys') -> (
+    match cmp x y with
+    (* Skip matched items *)
+    | 0 -> seq_sorted_difference cmp xs' ys ()
+    (* Allow lesser items *)
+    | lt when lt < 0 -> Cons (x, seq_sorted_difference cmp xs' ys)
+    (* Check against next y for greater items *)
+    | gt -> seq_sorted_difference cmp xs ys' () )
 ;;
 
 let rec pos_seq ?(p : Point.t = { x= 0; y= 0 }) (cs : char Seq.t) :
@@ -99,6 +135,10 @@ let pp_pointset ppf s = pp_set ppf Point.pp (s |> PointSet.to_seq)
 
 let pp_pointmapunit ppf m = pp_map ppf Point.pp pp_unit (m |> PointMap.to_seq)
 
+let pp_pointmapint ppf m =
+  pp_map ppf Point.pp Format.pp_print_int (m |> PointMap.to_seq)
+;;
+
 module PointVertex = struct
   type t = Point.t * Point.t
 
@@ -150,11 +190,28 @@ module State = struct
 
   (** Ascending persistent sequence of elves and goblins *)
   let units_seq s : (Point.t * (unit_kind * unit)) Seq.t =
-    let cmp_pos (p1, _) (p2, _) = Point.compare p1 p2
+    let cmp_pos (p1, (k1, _)) (p2, (k2, _)) = Point.compare p1 p2
     and elves = elves_seq s |> Seq.map (fun (p, e) -> (p, (Elf, e)))
     and goblins = goblins_seq s |> Seq.map (fun (p, g) -> (p, (Goblin, g))) in
 
     Seq.sorted_merge cmp_pos elves goblins
+  ;;
+
+  let points_seq s =
+    let xs = range 0 (s.width - 1) and ys = range 0 (s.height - 1) in
+    Seq.flat_map (fun y -> Seq.map (fun x -> { Point.x; y }) xs) ys
+  ;;
+
+  let blocked_seq s : Point.t Seq.t =
+    let key_seq s = s |> PointMap.to_seq |> Seq.map fst in
+    s.walls
+    |> PointSet.to_seq
+    |> Seq.sorted_merge Point.compare (key_seq s.elves)
+    |> Seq.sorted_merge Point.compare (key_seq s.goblins)
+  ;;
+
+  let empty_seq s : Point.t Seq.t =
+    seq_sorted_difference Point.compare (points_seq s) (blocked_seq s)
   ;;
 
   let add (s : t) (p : Point.t) tile : t =
@@ -225,12 +282,8 @@ module State = struct
 
   (** Ascending persistent sequence of squares around a point *)
   let around s (p : Point.t) =
-    [ { p with y= p.y - 1 }
-    ; { p with x= p.x - 1 }
-    ; { p with x= p.x + 1 }
-    ; { p with y= p.y + 1 }
-    ]
-    |> List.to_seq
+    p
+    |> Point.arround
     |> Seq.filter (is_in s)
     |> Seq.map (fun p -> (p, get s p))
   ;;
@@ -318,6 +371,79 @@ type turn_end_reason =
   | MovedAndFought of fight_outcome
 
 type stop_reason = NoEnemies | Stalemate
+
+module PQueue = struct
+  module IntMap = Map.Make (Int)
+
+  type 'a t = 'a list IntMap.t
+
+  let empty = IntMap.empty
+
+  let is_empty q = IntMap.is_empty q
+
+  let add q p v =
+    IntMap.update p
+      (function
+        | None -> Some [ v ]
+        | Some vs -> Some (v :: vs) )
+      q
+  ;;
+
+  let add_seq q p = Seq.fold_left (fun q v -> add q p v) q
+
+  let get q =
+    let p, vs = IntMap.min_binding q in
+    match vs with
+    | [] -> failwith "Unexpected empty list"
+    | [ v ] -> ((p, v), IntMap.remove p q)
+    | v :: vs' -> ((p, v), IntMap.add p vs' q)
+  ;;
+end
+
+let calc_distance s from : int PointMap.t =
+  (* Naive:
+     - start with destination and dist 0
+     - for each neighbor not in seen, add to seen with dist + 1
+     - do for entire board
+     - use map of all empty spaces?
+
+     Optimised:
+     - use priority queue of (dist, point Queue.t)
+     - once found neighboring tile of destination, stop once all tiles in queue
+       at that distance have been searched
+  *)
+  let empty = PointSet.of_seq (State.empty_seq s) in
+
+  let rec walk queue seen =
+    if PQueue.is_empty queue then seen
+    else
+      let (dist, node), queue = PQueue.get queue in
+      let seen = PointMap.add node dist seen in
+
+      let unseen_arround =
+        node
+        |> Point.arround
+        |> Seq.filter (fun p -> PointSet.mem p empty)
+        |> Seq.filter (fun p -> not (PointMap.mem p seen))
+        |> List.of_seq
+      in
+
+      let seen =
+        PointMap.add_seq
+          (unseen_arround |> List.to_seq |> Seq.map (fun p -> (p, dist + 1)))
+          seen
+      and queue =
+        PQueue.add_seq queue (dist + 1) (unseen_arround |> List.to_seq)
+      in
+
+      walk queue seen
+  in
+
+  let queue = PQueue.add PQueue.empty 0 from in
+  let seen = PointMap.empty in
+
+  walk queue seen
+;;
 
 let fight s atk_p def_p : fight_outcome * state =
   let atk = State.get_unit s atk_p and def = State.get_unit s def_p in
@@ -421,8 +547,21 @@ module StrBoard = struct
 
     PointSet.iter set_wall s.walls ;
     PointMap.iter set_elf s.elves ;
-    PointMap.iter set_gob s.elves ;
+    PointMap.iter set_gob s.goblins ;
     a
+  ;;
+
+  let add_distances d b =
+    let char_of_num d = char_of_int (d + 48) in
+    let char_of_dist d =
+      assert (d >= 0) ;
+      match d with
+      | 0 -> 'X'
+      | d when d >= 10 -> char_of_num (d mod 10)
+      | d -> char_of_num d
+    in
+    d |> PointMap.iter (fun p d -> set b p (char_of_dist d)) ;
+    b
   ;;
 
   let output ch (b : t) =
