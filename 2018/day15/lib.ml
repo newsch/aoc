@@ -18,6 +18,53 @@ let pp_map ppf pp_k pp_v (s : ('a * 'b) Seq.t) =
   Format.fprintf ppf "{@[%a@]}" Format.(pp_print_seq ~pp_sep:pp_comma pp_pair) s
 ;;
 
+(** Get the last non-Nil item in a sequence *)
+let seq_last (s : 'a Seq.t) : 'a =
+  let rec seq_last' last (s : 'a Seq.t) =
+    match s () with
+    | Nil -> last
+    | Cons (last', s') -> seq_last' last' s'
+  in
+  match s () with
+  | Nil -> failwith "Sequence was empty"
+  | Cons (last, s') -> seq_last' last s'
+;;
+
+let seq_viewer v = Seq.map (fun a -> v a ; a)
+
+let seq_viewer_if c v s = if c then seq_viewer v s else s
+
+(** An infinite sequence of ints that increments by one, starting at n *)
+let rec seq_count n : int Seq.t = fun () -> Seq.Cons (n, seq_count (n + 1))
+
+let seq_enumerate ?(start = 0) s = Seq.zip (seq_count start) s
+
+let rec seq_stop_after cond s () =
+  let open Seq in
+  match s () with
+  | Nil -> Nil
+  | Cons (o, s') -> Cons (o, if cond o then empty else seq_stop_after cond s')
+;;
+
+let rec char_seq_of_channel ch () =
+  try Seq.Cons (input_char ch, char_seq_of_channel ch)
+  with End_of_file -> Seq.Nil
+;;
+
+let char_seq_of_string s =
+  let stop = String.length s in
+  let rec loop i =
+    if i >= stop then Seq.empty else Seq.cons (String.get s i) (loop (i + 1))
+  in
+  loop 0
+;;
+
+(** inclusive sequence of start -> stop *)
+let rec range start stop : int Seq.t =
+ fun () ->
+  if start > stop then Seq.Nil else Seq.Cons (start, range (start + 1) stop)
+;;
+
 module Point = struct
   type t = { x: int; y: int }
 
@@ -45,25 +92,6 @@ module Point = struct
         ))
   ;;
 end
-
-let rec char_seq_of_channel ch () =
-  try Seq.Cons (input_char ch, char_seq_of_channel ch)
-  with End_of_file -> Seq.Nil
-;;
-
-let char_seq_of_string s =
-  let stop = String.length s in
-  let rec loop i =
-    if i >= stop then Seq.empty else Seq.cons (String.get s i) (loop (i + 1))
-  in
-  loop 0
-;;
-
-(** inclusive sequence of start -> stop *)
-let rec range start stop : int Seq.t =
- fun () ->
-  if start > stop then Seq.Nil else Seq.Cons (start, range (start + 1) stop)
-;;
 
 (** [sorted_difference cmp xs ys] is the sorted sequence [xs] without the sorted [ys] *)
 let rec seq_sorted_difference cmp xs ys () =
@@ -259,12 +287,18 @@ module State = struct
       | None -> s )
   ;;
 
-  let update_unit s p u : t =
+  let update_unit s p np u : t =
+    let update m =
+      m
+      |> (if np != p then PointMap.remove p else fun m -> m)
+      |> PointMap.add np u
+    in
+
     match PointMap.find_opt p s.elves with
-    | Some _e -> { s with elves= PointMap.add p u s.elves }
+    | Some _e -> { s with elves= update s.elves }
     | None -> (
       match PointMap.find_opt p s.goblins with
-      | Some _g -> { s with goblins= PointMap.add p u s.goblins }
+      | Some _g -> { s with goblins= update s.goblins }
       | None -> s )
   ;;
 
@@ -359,6 +393,12 @@ let cmp_unit (p1, u1) (p2, u2) : int =
   | i -> i
 ;;
 
+let cmp_point_by_dist (p1, d1) (p2, d2) : int =
+  match Int.compare d1 d2 with
+  | 0 -> Point.compare p1 p2
+  | i -> i
+;;
+
 type fight_outcome = Injured | Killed
 
 type turn_end_reason =
@@ -366,9 +406,9 @@ type turn_end_reason =
   | NoEnemies
   | NoFreeSpaces
   | NoPath
-  | Fought of fight_outcome
+  | Fought of (fight_outcome * unit_kind)
   | Moved
-  | MovedAndFought of fight_outcome
+  | MovedAndFought of (fight_outcome * unit_kind)
 
 type stop_reason = NoEnemies | Stalemate
 
@@ -445,7 +485,7 @@ let calc_distance s from : int PointMap.t =
   walk queue seen
 ;;
 
-let fight s atk_p def_p : fight_outcome * state =
+let fight s atk_p def_p : (fight_outcome * unit_kind) * state =
   let atk = State.get_unit s atk_p and def = State.get_unit s def_p in
   (* assert both exist *)
   assert (Option.is_some atk) ;
@@ -456,8 +496,8 @@ let fight s atk_p def_p : fight_outcome * state =
 
   let def = { def with hp= def.hp - atk.ap } in
 
-  if def.hp <= 0 then (Killed, State.remove_unit s def_p)
-  else (Injured, State.update_unit s def_p def)
+  if def.hp <= 0 then ((Killed, def_kind), State.remove_unit s def_p)
+  else ((Injured, def_kind), State.update_unit s def_p def_p def)
 ;;
 
 let step_unit (p : Point.t) (s : state) : state * turn_end_reason =
@@ -475,7 +515,7 @@ let step_unit (p : Point.t) (s : state) : state * turn_end_reason =
         | (ep, _) :: _ ->
             let res, s = fight s p ep in
             (s, Fought res)
-        | [] ->
+        | [] -> (
             (* Target selection *)
             let available_spaces =
               targets
@@ -485,8 +525,44 @@ let step_unit (p : Point.t) (s : state) : state * turn_end_reason =
             in
             if Seq.is_empty available_spaces then
               (* Stop if no available spaces around targets *) (s, NoFreeSpaces)
-            else (* Pathfinding *)
-              failwith "Not Implemented" )
+            else
+              (* Pathfinding *)
+              let distances_from_unit = calc_distance s p in
+              let space_distances =
+                available_spaces
+                |> Seq.filter_map (fun p ->
+                       PointMap.find_opt p distances_from_unit
+                       |> Option.map (fun d -> (p, d)) )
+                |> List.of_seq
+                |> List.sort cmp_point_by_dist
+              in
+              match space_distances with
+              | [] -> (* Stop if no path to any spaces *) (s, NoPath)
+              | (target, d) :: rest -> (
+                  let distances_from_target = calc_distance s target in
+                  let step_distances =
+                    State.open_around s p
+                    |> Seq.filter_map (fun p ->
+                           PointMap.find_opt p distances_from_target
+                           |> Option.map (fun d -> (p, d)) )
+                    |> List.of_seq
+                    |> List.sort cmp_point_by_dist
+                  in
+                  match step_distances with
+                  | [] -> failwith "Could not find path again"
+                  | (step, d) :: rest -> (
+                      let s = State.update_unit s p step u and p = step in
+                      (* combat if next to one *)
+                      let nearby_enemies =
+                        State.enemies_around s kind p
+                        |> List.of_seq
+                        |> List.sort cmp_unit
+                      in
+                      match nearby_enemies with
+                      | [] -> (s, Moved)
+                      | (ep, enemy) :: _ ->
+                          let res, s = fight s p ep in
+                          (s, MovedAndFought res) ) ) ) )
 ;;
 
 (** Execute one round.
@@ -497,8 +573,7 @@ let step_unit (p : Point.t) (s : state) : state * turn_end_reason =
 
     Calling [step] on a returned [Err state] will result in the same state
     being returned. *)
-let step (s : state) :
-    state * turn_end_reason list * (Unit.t, stop_reason) result =
+let step (s : state) : state * turn_end_reason list * stop_reason option =
   (* for each unit (in reading order):
      - find all targets
        - if none, combat ends
@@ -517,17 +592,25 @@ let step (s : state) :
 
   let rec unit_loop units s' turn_outcomes =
     match units with
-    | [] -> (s', turn_outcomes, if s' = s then Error Stalemate else Ok ())
+    | [] -> (s', turn_outcomes, if s' = s then Some Stalemate else None)
     | u :: rest -> (
         let new_s, outcome = step_unit u s' in
         let new_outcomes = outcome :: turn_outcomes in
         (* Early exit on Error *)
         match outcome with
-        | NoEnemies -> (new_s, new_outcomes, Error NoEnemies)
+        | NoEnemies -> (new_s, new_outcomes, Some NoEnemies)
         | _ -> unit_loop rest new_s new_outcomes )
   in
 
   unit_loop units s []
+;;
+
+let step_forever start = (start, [], None) |> Seq.iterate (fun (s, _, _) -> step s)
+
+let step_to_completion start =
+  start
+  |> step_forever
+  |> seq_stop_after (fun (_, _, stop) -> Option.is_some stop)
 ;;
 
 module StrBoard = struct
@@ -564,33 +647,31 @@ module StrBoard = struct
     b
   ;;
 
-  let output ch (b : t) =
+  let format fmt b =
     let output_row r =
-      Array.iter (output_char ch) r ;
-      output_char ch '\n'
+      Array.iter (Format.pp_print_char fmt) r ;
+      Format.pp_print_char fmt '\n'
     in
-    Array.iter output_row b
-  ;;
-end
-
-module Bounds = struct
-  type t = { min_x: int; max_x: int; min_y: int; max_y: int }
-
-  let fold (bounds : t option) ({ x; y } : Point.t) =
-    match bounds with
-    | None -> Some { min_x= x; max_x= x; min_y= y; max_y= y }
-    | Some { min_x; max_x; min_y; max_y } ->
-        let min_x = min min_x x in
-        let max_x = max max_x x in
-        let min_y = min min_y y in
-        let max_y = max max_y y in
-        Some { min_x; max_x; min_y; max_y }
+    Array.iter output_row b ;
+    Format.pp_print_newline fmt ()
   ;;
 
-  let of_seq (s : Point.t Seq.t) : t option = s |> Seq.fold_left fold None
+  let output ch = format (Format.formatter_of_out_channel ch)
 
-  (** (width, height) of bounds *)
-  let dimensions b = (b.max_x - b.min_x, b.max_y - b.min_y)
+  let to_str b =
+    format Format.str_formatter b ;
+    Format.flush_str_formatter ()
+  ;;
 end
 
 let get_input ch = ch |> char_seq_of_channel |> State.parse
+
+let get_output rounds s =
+  let total_hp =
+    s
+    |> State.units_seq
+    |> Seq.map (fun (_, (_, u)) -> u.hp)
+    |> Seq.fold_left ( + ) 0
+  in
+  rounds * total_hp
+;;

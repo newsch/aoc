@@ -27,8 +27,10 @@ let test_unit_step (desc, unit_num, initial, outcome, final) =
   in
 
   let got_state, got_outcome = step_unit unit initial in
-  assert_equal got_state final ;
-  assert_equal got_outcome outcome
+  assert_equal ~msg:"state"
+    ~printer:(fun s -> s |> StrBoard.of_state |> StrBoard.to_str)
+    final got_state ;
+  assert_equal ~msg:"outcome" outcome got_outcome
 ;;
 
 let unit_step_tests =
