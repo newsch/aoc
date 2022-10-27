@@ -271,7 +271,27 @@ end
 
 type state = State.t
 
-let fight s atk_p def_p : state =
+(** Ordering for units that prefers low health over position *)
+let cmp_unit (p1, u1) (p2, u2) : int =
+  match Int.compare u1.hp u2.hp with
+  | 0 -> Point.compare p1 p2
+  | i -> i
+;;
+
+type fight_outcome = Injured | Killed
+
+type turn_end_reason =
+  | UnitNotFound
+  | NoEnemies
+  | NoFreeSpaces
+  | NoPath
+  | Fought of fight_outcome
+  | Moved
+  | MovedAndFought of fight_outcome
+
+type stop_reason = NoEnemies | Stalemate
+
+let fight s atk_p def_p : fight_outcome * state =
   let atk = State.get_unit s atk_p and def = State.get_unit s def_p in
   (* assert both exist *)
   assert (Option.is_some atk) ;
@@ -282,32 +302,25 @@ let fight s atk_p def_p : state =
 
   let def = { def with hp= def.hp - atk.ap } in
 
-  if def.hp <= 0 then State.remove_unit s def_p
-  else State.update_unit s def_p def
+  if def.hp <= 0 then (Killed, State.remove_unit s def_p)
+  else (Injured, State.update_unit s def_p def)
 ;;
 
-(** Ordering for units that prefers low health over position *)
-let cmp_unit (p1, u1) (p2, u2) : int =
-  match Int.compare u1.hp u2.hp with
-  | 0 -> Point.compare p1 p2
-  | i -> i
-;;
-
-(* TODO: specific error/unit action types (single returned by step_unit, list from step) *)
-
-let step_unit (p : Point.t) (s : state) =
+let step_unit (p : Point.t) (s : state) : state * turn_end_reason =
   match State.get_unit s p with
-  | None -> (* Skip dead units *) Ok s
+  | None -> (* Skip dead units *) (s, UnitNotFound)
   | Some (kind, u) -> (
       let targets = State.get_enemies kind s in
-      if Seq.is_empty targets then (* Stop on no targets *) Error s
+      if Seq.is_empty targets then (* Stop on no targets *) (s, NoEnemies)
       else
         (* jump to combat if next to one already *)
         let nearby_enemies =
           State.enemies_around s kind p |> List.of_seq |> List.sort cmp_unit
         in
         match nearby_enemies with
-        | (ep, _) :: _ -> Ok (fight s p ep)
+        | (ep, _) :: _ ->
+            let res, s = fight s p ep in
+            (s, Fought res)
         | [] ->
             (* Target selection *)
             let available_spaces =
@@ -317,7 +330,7 @@ let step_unit (p : Point.t) (s : state) =
               |> Seq.fold_left (Seq.sorted_merge Point.compare) Seq.empty
             in
             if Seq.is_empty available_spaces then
-              (* Stop if no available spaces around targets *) Ok s
+              (* Stop if no available spaces around targets *) (s, NoFreeSpaces)
             else (* Pathfinding *)
               failwith "Not Implemented" )
 ;;
@@ -330,7 +343,8 @@ let step_unit (p : Point.t) (s : state) =
 
     Calling [step] on a returned [Err state] will result in the same state
     being returned. *)
-let step (s : state) : (state, state) result =
+let step (s : state) :
+    state * turn_end_reason list * (Unit.t, stop_reason) result =
   (* for each unit (in reading order):
      - find all targets
        - if none, combat ends
@@ -347,17 +361,19 @@ let step (s : state) : (state, state) result =
   *)
   let units = State.units_seq s |> Seq.map fst |> List.of_seq in
 
-  let rec unit_loop units s =
+  let rec unit_loop units s' turn_outcomes =
     match units with
-    | [] -> Ok s
-    | u :: rest ->
-        (* Early exit on Error *) Result.bind (step_unit u s) (unit_loop rest)
+    | [] -> (s', turn_outcomes, if s' = s then Error Stalemate else Ok ())
+    | u :: rest -> (
+        let new_s, outcome = step_unit u s' in
+        let new_outcomes = outcome :: turn_outcomes in
+        (* Early exit on Error *)
+        match outcome with
+        | NoEnemies -> (new_s, new_outcomes, Error NoEnemies)
+        | _ -> unit_loop rest new_s new_outcomes )
   in
 
-  unit_loop units s
-  (* Check for stalemate *)
-  |> Result.map (fun s' -> if s' = s then Error s' else Ok s')
-  |> Result.join
+  unit_loop units s []
 ;;
 
 module StrBoard = struct

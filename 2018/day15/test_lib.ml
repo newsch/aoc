@@ -19,26 +19,27 @@ let compare_tests =
 
 let parse s = s |> char_seq_of_string |> State.parse
 
-let test_unit_step (desc, unit_num, initial, final) =
+let test_unit_step (desc, unit_num, initial, outcome, final) =
   "test_unit_step_" ^ desc
   >:: fun _ ->
-  let init = parse initial
-  and final = final |> Result.map parse |> Result.map_error parse in
   let unit =
-    List.nth (State.units_seq init |> Seq.map fst |> List.of_seq) unit_num
+    List.nth (State.units_seq initial |> Seq.map fst |> List.of_seq) unit_num
   in
-  assert_equal (step_unit unit init) final
+
+  let got_state, got_outcome = step_unit unit initial in
+  assert_equal got_state final ;
+  assert_equal got_outcome outcome
 ;;
 
 let unit_step_tests =
   List.map test_unit_step
-    [ ("no_enemies_elf", 0, "E.\n..", Error "E.\n..")
-    ; ("no_enemies_gob", 0, "G.\n..", Error "G.\n..")
-    ; ("no_open_enemies1", 0, "E.#G", Ok "E.#G")
-    ; ("no_open_enemies2", 2, "EE#G", Ok "EE#G")
-    ; ("stalemate", 1, "E.#.G", Ok "E.#.G")
-    ; ("one_enemy_linear1", 0, "E..G", Ok ".E.G")
-    ; ("one_enemy_linear2", 1, "E..G", Ok "E.G.")
+    [ ("no_enemies_elf", 0, parse "E.\n..", NoEnemies, parse "E.\n..")
+    ; ("no_enemies_gob", 0, parse "G.\n..", NoEnemies, parse "G.\n..")
+    ; ("no_open_enemies1", 0, parse "E.#G", NoFreeSpaces, parse "E.#G")
+    ; ("no_open_enemies2", 2, parse "EE#G", NoFreeSpaces, parse "EE#G")
+    ; ("no_path", 1, parse "E.#.G", NoPath, parse "E.#.G")
+    ; ("one_enemy_linear1", 0, parse "E..G", Moved, parse ".E.G")
+    ; ("one_enemy_linear2", 1, parse "E..G", Moved, parse "E.G.")
     ]
 ;;
 
