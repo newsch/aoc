@@ -1,3 +1,23 @@
+(* Printing *)
+let pp_comma ppf () = Format.fprintf ppf ",@ "
+
+let pp_semicolon ppf () = Format.fprintf ppf ";@ "
+
+let pp_list ppf pp_v l =
+  Format.fprintf ppf "[@[%a@]]"
+    Format.(pp_print_list ~pp_sep:pp_semicolon pp_v)
+    l
+;;
+
+let pp_set ppf pp_v s =
+  Format.fprintf ppf "{@[%a@]}" Format.(pp_print_seq ~pp_sep:pp_comma pp_v) s
+;;
+
+let pp_map ppf pp_k pp_v (s : ('a * 'b) Seq.t) =
+  let pp_pair ppf (k, v) = Format.fprintf ppf "%a => %a" pp_k k pp_v v in
+  Format.fprintf ppf "{@[%a@]}" Format.(pp_print_seq ~pp_sep:pp_comma pp_pair) s
+;;
+
 module Point = struct
   type t = { x: int; y: int }
 
@@ -8,6 +28,8 @@ module Point = struct
     | x, 0 -> x
     | _, y -> y
   ;;
+
+  let pp ppf p = Format.fprintf ppf "(%d, %d)" p.x p.y
 end
 
 let rec char_seq_of_channel ch () =
@@ -40,6 +62,8 @@ let rec pos_seq ?(p : Point.t = { x= 0; y= 0 }) (cs : char Seq.t) :
 
 type unit = { hp: int; ap: int }
 
+let pp_unit ppf u = Format.fprintf ppf "{hp=%d; ap=%d}" u.hp u.ap
+
 type unit_kind = Elf | Goblin
 
 let enemy_kind = function
@@ -70,6 +94,10 @@ let char_of_tile t =
 
 module PointSet = Set.Make (Point)
 module PointMap = Map.Make (Point)
+
+let pp_pointset ppf s = pp_set ppf Point.pp (s |> PointSet.to_seq)
+
+let pp_pointmapunit ppf m = pp_map ppf Point.pp pp_unit (m |> PointMap.to_seq)
 
 module PointVertex = struct
   type t = Point.t * Point.t
