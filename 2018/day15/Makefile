@@ -1,7 +1,7 @@
 %.native: %.ml lib.ml
 	ocamlbuild $@
 
-all: day15.native
+all: day15.native day15p2.native
 
 
 test: test_*.native

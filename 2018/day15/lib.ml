@@ -302,6 +302,14 @@ module State = struct
       | None -> s )
   ;;
 
+  let map_units f s =
+    s
+    |> units_seq
+    |> seq_enumerate
+    |> Seq.map (fun (i, (p, (k, u))) -> (p, f i p k u))
+    |> Seq.fold_left (fun s (p, u) -> update_unit s p p u) s
+  ;;
+
   (** Ascending persistent sequence of opposing units *)
   let get_enemies = function
     | Elf -> goblins_seq
@@ -605,12 +613,40 @@ let step (s : state) : state * turn_end_reason list * stop_reason option =
   unit_loop units s []
 ;;
 
-let step_forever start = (start, [], None) |> Seq.iterate (fun (s, _, _) -> step s)
+let step_forever start =
+  (start, [], None) |> Seq.iterate (fun (s, _, _) -> step s)
+;;
 
 let step_to_completion start =
   start
   |> step_forever
   |> seq_stop_after (fun (_, _, stop) -> Option.is_some stop)
+;;
+
+let step_to_death_or_completion start =
+  let elf_died (_, log, _) =
+    log
+    |> List.find_opt (function
+         | Fought (Killed, Elf) | MovedAndFought (Killed, Elf) -> true
+         | _ -> false )
+    |> Option.is_some
+  in
+
+  let complete (_, _, stop) = Option.is_some stop in
+
+  let map_to_result res =
+    let state, _, stop = res in
+    ( state
+    , match (elf_died res, stop) with
+      | false, Some r -> Ok r
+      | _, _ -> Error () )
+  in
+
+  start
+  |> step_forever
+  |> seq_stop_after elf_died
+  |> seq_stop_after complete
+  |> Seq.map map_to_result
 ;;
 
 module StrBoard = struct
