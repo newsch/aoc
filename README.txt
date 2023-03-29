@@ -1,4 +1,4 @@
-Various incomplete solutions for the Advent of Code (https://adventofcode.com/).
+Various late solutions for the Advent of Code (https://adventofcode.com/).
 
    December 2018
 Su Mo Tu We Th Fr Sa
